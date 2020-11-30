@@ -67,7 +67,7 @@ class HuberMixture(BaseEstimator):
     logp_jac = huber_logp_jac(self.scale)
     out = optimize.minimize(loss_func(x,y_logp,c_dense_shape,logp_func),c.ravel(),jac=loss_jac(x,y_logp,c_dense_shape,logp_func,logp_jac))
     c = out.x.reshape(c_dense_shape)
-    return c
+    return c,-out.fun
 
   def _estep(self,x,c,y_logp):
     ''' updates class log-probs given cluster location (by bayes probability rules) '''
@@ -75,18 +75,26 @@ class HuberMixture(BaseEstimator):
     logp = x_c_logp(np.expand_dims(x,-1),c,logp_func) + y_logp # (n_rows,n_class)
     return logp - np.expand_dims(logsumexp(logp,axis=1),1)
 
-  def fit_predict(self,x,n_iter=30):
+  def fit_predict(self,x,n_iter=30,n_init=3,warm_start=True):
     ## dispatch dimensions
     n_rows,n_features = x.shape
     n_classes = self.n_classes
-    ## initialize variables
-    c = np.random.normal(size=(n_features,n_classes))  # (n_features,n_class)
-    y_logp = np.log(np.ones((n_rows,n_classes))/n_classes)
-    ## train by alternating M and E step
-    for _ in range(n_iter):
-      c = self._mstep(x,c,y_logp)
-      y_logp = self._estep(x,c,y_logp)
-
-    self.c = c
-    self.y_logp = y_logp
-    return y_logp
+    self.logp = -np.inf
+    c = None
+    y_logp = None
+    for _ in range(n_init):
+      ## warm start or initialize variables
+      if c is None or not warm_start:
+        c = np.random.normal(size=(n_features,n_classes))  # (n_features,n_class)
+        y_logp = np.log(np.ones((n_rows,n_classes))/n_classes)
+      else:
+        c,y_logp = self.c,self.y_logp
+      ## train by alternating M and E step
+      for _ in range(n_iter):
+        c,logp = self._mstep(x,c,y_logp)
+        y_logp = self._estep(x,c,y_logp)
+      if logp > self.logp + 1e-3:
+        self.logp = logp
+        self.c = c
+        self.y_logp = y_logp
+    return self.y_logp
