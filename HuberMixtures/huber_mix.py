@@ -3,30 +3,31 @@ from scipy.special import logsumexp,softmax
 from scipy import optimize
 from sklearn.base import BaseEstimator
 
-
 ## huber log-likelihood and gradients
 
-def huber_loss(scale):
-  def huber_loss(x):
-    return scale**2 * ((1+(x/scale)**2)**0.5-1)
-  return huber_loss
+def huber_loss_general(x,scale):
+  return scale**2 * ((1+(x/scale)**2)**0.5-1)
 
-def huber_loss_jac(scale):
-  def huber_loss_jac(x):
-    return scale**2*x/(1+(x/scale)**2)**0.5
-  return huber_loss_jac
+def huber_logp(scale):
+  def huber_logp(x):
+    return -huber_loss_general(x,scale)
+  return huber_logp
 
-## some calculations on mixture log-likelihood  
+def huber_logp_jac(scale):
+  def huber_logp_jac(x):
+    return -scale**2 * x/(1+(x/scale)**2)**0.5
+  return huber_logp_jac
 
-def x_c_logp(x,c,logp_func=huber_loss(0.0)):
+## mixture log-likelihood calculations 
+
+def x_c_logp(x,c,logp_func=huber_logp(0.0)):
   ''' log-prob of data given cluster location '''
-  return -logp_func(x-c).sum(axis=1) # (n_rows,n_class)
+  return logp_func(x-c).sum(axis=1) # (n_rows,n_class)
 
 def x_logp(x,c,y_logp,logp_func):
   ''' log-prob of data over clusters assignments and cluster centers '''
   logp = x_c_logp(np.expand_dims(x,-1),c,logp_func) + y_logp # (n_rows,n_class)
   return logsumexp(logp,axis=-1) # (n_rows,)
-
 
 class HuberMixture(BaseEstimator):
   '''
@@ -45,6 +46,7 @@ class HuberMixture(BaseEstimator):
     def loss_func(x,y_logp,c_dense_shape,logp_func):
       ''' note: needs to convert tensors between model (rank 2) and optimization subroutine (rank 1) '''
       def func(c):
+        c = c.reshape(c_dense_shape)
         return -x_logp(x,c.reshape(c_dense_shape),y_logp,logp_func).mean()
       return func
     
@@ -54,24 +56,26 @@ class HuberMixture(BaseEstimator):
         c = c.reshape(c_dense_shape)
         logp = x_c_logp(np.expand_dims(x,-1),c,logp_func) + y_logp # (n_rows,n_class)
         p = softmax(logp,-1) # (n_rows,n_class)
-        jac = np.expand_dims(p,1) * -logp_jac(np.expand_dims(x,-1)-c) # (n_rows,n_features,n_class)
+        jac = np.expand_dims(p,1) * -logp_jac(c-np.expand_dims(x,-1)) # (n_rows,n_features,n_class)
         jac = jac.mean(0) # (n_features,n_class)
         return jac.ravel()
       return jac
 
+    ## optimize clusters
     c_dense_shape = c.shape
-    logp_func = huber_loss(self.scale)
-    logp_jac = huber_loss_jac(self.scale)
+    logp_func = huber_logp(self.scale)
+    logp_jac = huber_logp_jac(self.scale)
     out = optimize.minimize(loss_func(x,y_logp,c_dense_shape,logp_func),c.ravel(),jac=loss_jac(x,y_logp,c_dense_shape,logp_func,logp_jac))
-    return out.x.reshape(c_dense_shape)
+    c = out.x.reshape(c_dense_shape)
+    return c
 
   def _estep(self,x,c,y_logp):
     ''' updates class log-probs given cluster location (by bayes probability rules) '''
-    logp_func = huber_loss(self.scale)
+    logp_func = huber_logp(self.scale)
     logp = x_c_logp(np.expand_dims(x,-1),c,logp_func) + y_logp # (n_rows,n_class)
     return logp - np.expand_dims(logsumexp(logp,axis=1),1)
 
-  def fit_predict(self,x,n_iter=50):
+  def fit_predict(self,x,n_iter=30):
     ## dispatch dimensions
     n_rows,n_features = x.shape
     n_classes = self.n_classes
