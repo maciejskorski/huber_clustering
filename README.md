@@ -1,6 +1,6 @@
 # Soft Huber Clustering
 
-Implementation of soft clustering using mixtures with huber-like log-likelihood.
+Implementation of soft clustering using mixtures with log-likelihood inspired by Huber loss function.
 
 As empirically verified, this gives better results than KMeans and GaussianMixtures (particularly, more robust against outliers).
 
