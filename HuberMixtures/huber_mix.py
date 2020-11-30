@@ -71,7 +71,7 @@ class HuberMixture(BaseEstimator):
     logp = x_c_logp(np.expand_dims(x,-1),c,logp_func) + y_logp # (n_rows,n_class)
     return logp - np.expand_dims(logsumexp(logp,axis=1),1)
 
-  def fit_predict(self,x,n_iter=20):
+  def fit_predict(self,x,n_iter=50):
     ## dispatch dimensions
     n_rows,n_features = x.shape
     n_classes = self.n_classes
