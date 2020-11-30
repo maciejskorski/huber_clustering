@@ -63,7 +63,6 @@ class HuberMixture(BaseEstimator):
     logp_func = huber_loss(self.scale)
     logp_jac = huber_loss_jac(self.scale)
     out = optimize.minimize(loss_func(x,y_logp,c_dense_shape,logp_func),c.ravel(),jac=loss_jac(x,y_logp,c_dense_shape,logp_func,logp_jac))
-    print(out.fun)
     return out.x.reshape(c_dense_shape)
 
   def _estep(self,x,c,y_logp):
